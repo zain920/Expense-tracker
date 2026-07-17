@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense Tracker</title>
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM via CDN --> 
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel standalone for JSX -->
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    /* simple transition for feedback */
+    .transaction-enter { transition: all 0.2s ease; }
+    .transaction-enter:hover { background-color: #ca3297; }
+  </style>
+</head>
+<body>
+  <div id="root" class="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center p-4"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    // --- Custom hook for Local Storage ---
+    function useLocalStorage(key, initialValue) {
+      const [stored, setStored] = useState(() => {
+        try {
+          const item = window.localStorage.getItem(key);
+          return item ? JSON.parse(item) : initialValue;
+        } catch (error) {
+          console.warn('Error reading localStorage', error);
+          return initialValue;
+        }
+      });
+
+      useEffect(() => {
+        try {
+          window.localStorage.setItem(key, JSON.stringify(stored));
+        } catch (error) {
+          console.warn('Error writing localStorage', error);
+        }
+      }, [key, stored]);
+
+      return [stored, setStored];
+    }
+
+    // --- Helper: generate short id ---
+    function genId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    // --- Main App ---
+    function App() {
+      const [transactions, setTransactions] = useLocalStorage('expenseTrackerData', []);
+      const [description, setDescription] = useState('');
+      const [amount, setAmount] = useState('');
+      const [type, setType] = useState('expense'); // 'income' or 'expense'
+      const [error, setError] = useState('');
+
+      // Computed totals
+      const totalBalance = useMemo(() => {
+        return transactions.reduce((acc, t) => {
+          return t.type === 'income' ? acc + t.amount : acc - t.amount;
+        }, 0);
+      }, [transactions]);
+
+      const totalIncome = useMemo(() => {
+        return transactions
+          .filter(t => t.type === 'income')
+          .reduce((acc, t) => acc + t.amount, 0);
+      }, [transactions]);
+
+      const totalExpense = useMemo(() => {
+        return transactions
+          .filter(t => t.type === 'expense')
+          .reduce((acc, t) => acc + t.amount, 0);
+      }, [transactions]);
+
+      // --- handlers ---
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        // validation
+        const descTrim = description.trim();
+        const amountNum = parseFloat(amount);
+
+        if (!descTrim) {
+          setError('Please enter a description.');
+          return;
+        }
+        if (isNaN(amountNum) || amountNum <= 0) {
+          setError('Please enter a valid positive amount.');
+          return;
+        }
+        setError('');
+
+        const newTransaction = {
+          id: genId(),
+          description: descTrim,
+          amount: amountNum,
+          type: type,
+          createdAt: new Date().toISOString(),
+        };
+
+        setTransactions(prev => [newTransaction, ...prev]);
+        // reset form
+        setDescription('');
+        setAmount('');
+        setType('expense');
+      };
+
+      const deleteTransaction = (id) => {
+        if (window.confirm('Delete this transaction?')) {
+          setTransactions(prev => prev.filter(t => t.id !== id));
+        }
+      };
+
+      // Format currency
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+        }).format(value);
+      };
+
+      return (
+        <div className="max-w-3xl w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 transition-all">
+          <h1 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            Expense Tracker
+          </h1>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <p className="text-sm font-medium text-blue-600">Balance</p>
+              <p className={`text-2xl font-bold ${totalBalance >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+                {formatCurrency(totalBalance)}
+              </p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+              <p className="text-sm font-medium text-green-600">Income</p>
+              <p className="text-2xl font-bold text-green-700">{formatCurrency(totalIncome)}</p>
+            </div>
+            <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+              <p className="text-sm font-medium text-red-600">Expenses</p>
+              <p className="text-2xl font-bold text-red-700">{formatCurrency(totalExpense)}</p>
+            </div>
+          </div>
+
+          {/* Add Transaction Form */}
+          <div className="bg-gray-50 p-5 rounded-xl mb-6 border border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-700 mb-3">Add Transaction</h2>
+            <form onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-3 items-end">
+              <div className="flex-1 w-full">
+                <label htmlFor="desc" className="block text-sm font-medium text-gray-600 mb-1">Description</label>
+                <input
+                  id="desc"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Groceries"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                />
+              </div>
+              <div className="w-full md:w-28">
+                <label htmlFor="amount" className="block text-sm font-medium text-gray-600 mb-1">Amount</label>
+                <input
+                  id="amount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                />
+              </div>
+              <div className="w-full md:w-32">
+                <label htmlFor="type" className="block text-sm font-medium text-gray-600 mb-1">Type</label>
+                <select
+                  id="type"
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none bg-white"
+                >
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full md:w-auto px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm"
+              >
+                Add
+              </button>
+            </form>
+            {error && (
+              <p className="mt-2 text-sm text-red-600 bg-red-50 px-3 py-1 rounded border border-red-200">
+              {error}
+              </p>
+            )}
+          </div>
+
+          {/* Transactions List */}
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-semibold text-gray-700">Recent Transactions</h2>
+              <span className="text-sm text-gray-400">{transactions.length} entries</span>
+            </div>
+            {transactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                <p className="text-lg">No transactions yet</p>
+                <p className="text-sm">Add your first income or expense above.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+                {transactions.map((t) => (
+                  <li
+                    key={t.id}
+                    className="transaction-enter flex justify-between items-center px-4 py-3 bg-white hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                      <span className="font-medium text-gray-800">{t.description}</span>
+                      <span className={`text-sm font-semibold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                        {t.type === 'income' ? '+' : '-'} {formatCurrency(t.amount)}
+                      </span>
+                      <span className="text-xs text-gray-400 hidden sm:inline">
+                        {new Date(t.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => deleteTransaction(t.id)}
+                      className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-full hover:bg-red-50"
+                      aria-label="Delete"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Footer hint */}
+          <div className="mt-6 text-xs text-gray-400 border-t pt-4 flex justify-between items-center">
+            <span>Data persisted in Local Storage</span>
+            <span>{transactions.length > 0 && `${transactions.length} transactions`}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Mount React ---
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<App />);
+  </script>
+</body>
+</html>
